@@ -37,7 +37,7 @@ use 5.005; # qr//
 
 package Tk::FBox;
 require Tk::Toplevel;
-
+#use Smart::Comments;
 use strict;
 use vars qw($VERSION $updirImage $folderImage $fileImage);
 
@@ -49,22 +49,133 @@ use base qw(Tk::Toplevel);
 Construct Tk::Widget 'FBox';
 
 sub import {
-    if (defined $_[1] and $_[1] eq 'as_default') {
-	local $^W = 0;
-	package Tk;
-	if ($Tk::VERSION < 804) {
-	    *FDialog      = \&Tk::FBox::FDialog;
-	    *MotifFDialog = \&Tk::FBox::FDialog;
-	} else {
-	    *tk_getOpenFile = sub {
-		Tk::FBox::FDialog("tk_getOpenFile", @_);
-	    };
-	    *tk_getSaveFile = sub {
-		Tk::FBox::FDialog("tk_getSaveFile", @_);
-	    };
-	}
+    my $package = shift;
+    my $i = 0;
+    for my $arg (@_){
+        if ( $arg eq 'as_default' ) {
+            local $^W = 0;
+            package Tk;
+            if ($Tk::VERSION < 804) {
+                *FDialog      = \&Tk::FBox::FDialog;
+                *MotifFDialog = \&Tk::FBox::FDialog;
+            } else {
+                *tk_getOpenFile = sub {
+                    Tk::FBox::FDialog("tk_getOpenFile", @_);
+                };
+                *tk_getSaveFile = sub {
+                    Tk::FBox::FDialog("tk_getSaveFile", @_);
+                };
+            }
+        }
+        elsif( lc $arg eq 'i18n' ){
+            my $i18n = $_[$i+1];
+            $package->i18n_class("Tk::FBox::I18n::$i18n");
+        }
+        $i++;
     }
 }
+
+
+# i18n helper methods
+
+# strings_defaults()  returns a complete set of default strings
+# by delegating to strings() in our i18n-class
+# entries provided here can be overridden using the -strings config. option
+# different i18n_class can be set using the i18n_class() method,
+# specifying i18n => 'Class' as arg to 'use',
+# or config. option '-i18n'.
+# latter two cases expand the given $class to Tk::FBox::I18n::$class
+
+sub strings_defaults{
+    my $self = shift;
+    return $self->i18n_class->strings;
+}
+sub strings{
+    return {title_open   => 'Open',
+            title_save   => 'Save As',
+            title_dir    => 'Choose Directory',
+            dir          => 'Directory:',
+            filename     => 'File name:',
+            filetype     => 'Files of type:',
+            btn_ok       => '_Ok',
+            btn_save     => '_Save',
+            btn_open     => '_Open',
+            btn_cancel   => 'Cancel',
+            msg_file_dne => 'File "%PATH%" does not exist.',
+            msg_dir_dne  => 'Directory "%PATH%" does not exist.',
+            msg_chdir    => 'Cannot change to the directory "%PATH%".'
+                            ."\nPermission denied.",
+            msg_invalid  => 'Invalid filename: "%PATH%"',
+            msg_exists   => 'File "%PATH%" already exists.'
+                            ."\nDo you want to overwrite it?",
+        };
+}
+sub configuration_for{
+    my ($w,$label) = @_;
+    my $s = $w->cget('-strings')->{$label};
+    my $i = index( $s, '_');
+    $s =~ y/_//d;
+    my @config = ( -text      => $s,
+                   -underline => $i);
+    return @config;
+}
+sub bindkey_for{
+    my ($w,$label) = @_;
+    my $s = $w->cget('-strings')->{$label};
+    my $i = index( $s, '_');
+    if($i >= 0 and $i < length $s-2){
+        return lc substr($s, $i+1, 1);
+    }
+    return undef;
+}
+sub message_for{
+    my ($w,$label,$path) = @_;
+    my $s = $w->cget('-strings')->{$label};
+    $s =~ s/%PATH%/$path/;
+    return $s;
+}
+sub create_binding_for{
+    my ($w,$label,$callback) = @_;
+    my $k;
+    if ($k = $w->bindkey_for($label)){
+        ### creating binding for: $k
+        $w->bind("<Alt-$k>", $callback );
+    }
+    return '';
+}
+
+{
+# Tk::FBox is our default i18n_class
+my $i18n_class = __PACKAGE__;
+sub i18n_class{
+    my $self = shift;
+    if (@_){
+        my $class = $_[0];
+        # reset to default in case '' is passed in
+        $class ||= __PACKAGE__;
+        if(! $class->can('strings')) {
+            eval "require $class";
+            if ($@) {
+                warn "i18n_class ($class) not available or does not "
+                     ."implement 'strings()': $@";
+                # discard $class
+                $class = $i18n_class;
+            }
+            else{
+                # require successful, check again
+                if (! $class->can('strings')){
+                    warn "i18n_class ($class) does not implement 'strings()'";
+                    # discard $class
+                    $class = $i18n_class;
+                }
+            }
+        }
+        $i18n_class = $class;
+    }
+    return $i18n_class;
+}
+}
+
 
 # Note that -sortcmd is experimental and the interface is likely to change.
 # Using -sortcmd is really strange :-(
@@ -78,14 +189,31 @@ sub Populate {
     require Tk::IconList;
     require File::Basename;
     require Cwd;
+    # -strings option: a strings hash to override entries in the default set
+    # provided by our i18n_class
+    my $strings =  delete($args->{-strings});
+    my $i18n = delete($args->{-i18n});
+    my $i18n_class;
+    if ( defined $i18n ){
+        $i18n_class ="Tk::FBox::I18n::$i18n";
+        $w->i18n_class( $i18n_class );
+    }
+    # merge str defaults and overrides
+    my $str_defaults = $w->strings_defaults;
+    for my $key (keys %$str_defaults){
+        $strings->{$key} ||= $str_defaults->{$key};
+    }
 
+    $w->ConfigSpecs(-strings => ['PASSIVE',undef,undef,undef],
+                    -i18n    => ['PASSIVE',undef,undef,$i18n_class],
+                );
     $w->SUPER::Populate($args);
-
+    $w->configure(-strings => $strings);
     $w->{'encoding'} = $w->getEncoding('iso_8859_1');
 
     # f1: the frame with the directory option menu
     my $f1 = $w->Frame;
-    my $lab = $f1->Label(-text => 'Directory:', -underline => 0);
+    my $lab = $f1->Label($w->configuration_for('dir'));
     $w->{'dirMenu'} = my $dirMenu =
       $f1->Optionmenu(-variable => \$w->{'selectPath'},
 		      -textvariable => \$w->{'selectPath'},
@@ -114,20 +242,23 @@ EOF
       $w->IconList(-command => ['OkCmd', $w, 'iconlist'],
 		  );
     $icons->bind('<<ListboxSelect>>' => [$w, 'ListBrowse']);
-
-    # f2: the frame with the OK button and the "file name" field
+    # $f4 a frame to hold OK/Cancel Buttons
+    my $f4 = $w->Frame(-bd => 0);
+    # f2: the frame with the "file name" field
     my $f2 = $w->Frame(-bd => 0);
-#XXX File name => File names if multiple
-    my $f2_lab = $f2->Label(-text => 'File name:', -anchor => 'e',
-			    -width => 14, -underline => 5, -pady => 0);
+    #XXX File name => File names if multiple
+    my $f2_lab = $f2->Label($w->configuration_for( 'filename' ),
+                            -anchor => 'e',
+			    -width => 14,
+                            -pady => 0);
     $w->{'ent'} = my $ent = $f2->Entry;
 
     # The font to use for the icons. The default Canvas font on Unix
     # is just deviant.
-#    $w->{'icons'}{'font'} = $ent->cget(-font);
+    # $w->{'icons'}{'font'} = $ent->cget(-font);
     $w->{'icons'}->configure(-font => $ent->cget(-font));
 
-    # f3: the frame with the cancel button and the file types field
+    # f3: the frame with the file types field
     my $f3 = $w->Frame(-bd => 0);
 
     # The "File of types:" label needs to be grayed-out when
@@ -136,10 +267,9 @@ EOF
     # use a button widget to emulate a label widget (by setting its
     # bindtags)
     $w->{'typeMenuLab'} = my $typeMenuLab = $f3->Button
-      (-text => 'Files of type:',
+      ($w->configuration_for( 'filetype' ),
        -anchor  => 'e',
        -width => 14,
-       -underline => 9,
        -bd => $f2_lab->cget(-bd),
        -highlightthickness => $f2_lab->cget(-highlightthickness),
        -relief => $f2_lab->cget(-relief),
@@ -160,51 +290,49 @@ EOF
 
     # the okBtn is created after the typeMenu so that the keyboard traversal
     # is in the right order
-    $w->{'okBtn'} = my $okBtn = $f2->Button
-      (-text => 'OK',
-       -underline => 0,
-       -width => 6,
+    $w->{'okBtn'} = my $okBtn = $f4->Button
+      ($w->configuration_for( 'btn_ok' ),
        -default => 'active',
        -pady => 3,
       );
-    my $cancelBtn = $f3->Button
-      (-text => 'Cancel',
-       -underline => 0,
-       -width => 6,
+    my $cancelBtn = $f4->Button
+      ($w->configuration_for( 'btn_cancel' ),
        -default => 'normal',
        -pady => 3,
       );
-
+    
     # pack the widgets in f2 and f3
-    $okBtn->pack(-side => 'right', -padx => 4, -anchor => 'e');
+    $okBtn->pack( -padx => 4, -anchor => 'e',-fill => 'x' ,-expand => 1);
     $f2_lab->pack(-side => 'left', -padx => 4);
     $ent->pack(-expand => 'yes', -fill => 'x', -padx => 2, -pady => 0);
-    $cancelBtn->pack(-side => 'right', -padx => 4, -anchor => 'w');
+    $cancelBtn->pack( -padx => 4, -anchor => 'w',-fill => 'x' ,-expand => 1);
     $typeMenuLab->pack(-side => 'left', -padx => 4);
     $typeMenuBtn->pack(-expand => 'yes', -fill => 'x', -side => 'right');
 
     # Pack all the frames together. We are done with widget construction.
     $f1->pack(-side => 'top', -fill => 'x', -pady => 4);
+    $icons->pack(-expand => 'yes', -fill => 'both', -padx => 4, -pady => 1);
+    $f4->pack(-side => 'right');
     $f3->pack(-side => 'bottom', -fill => 'x');
     $f2->pack(-side => 'bottom', -fill => 'x');
-    $icons->pack(-expand => 'yes', -fill => 'both', -padx => 4, -pady => 1);
 
     # Set up the event handlers
     $ent->bind('<Return>',[$w,'ActivateEnt']);
     $upBtn->configure(-command => ['UpDirCmd', $w]);
     $okBtn->configure(-command => ['OkCmd', $w]);
     $cancelBtn->configure(-command, ['CancelCmd', $w]);
-
-    $w->bind('<Alt-d>',[$dirMenu,'focus']);
-    $w->bind('<Alt-t>',sub  {
-			     if ($typeMenuBtn->cget(-state) eq 'normal') {
-			     $typeMenuBtn->focus;
-			     } });
-    $w->bind('<Alt-n>',[$ent,'focus']);
-    $w->bind('<KeyPress-Escape>',[$cancelBtn,'invoke']);
-    $w->bind('<Alt-c>',[$cancelBtn,'invoke']);
-    $w->bind('<Alt-o>',['InvokeBtn','Open']);
-    $w->bind('<Alt-s>',['InvokeBtn','Save']);
+    $w->create_binding_for( 'dir', [$dirMenu,'focus'] );
+    $w->create_binding_for( 'filetype',
+                            sub  {
+                                if ($typeMenuBtn->cget(-state) eq 'normal') {
+                                    $typeMenuBtn->focus;
+                                }
+                            });
+    $w->create_binding_for( 'filename', [$ent,'focus'] );
+    $w->bind( '<KeyPress-Escape>', [$cancelBtn,'invoke'] );
+    $w->create_binding_for( 'btn_cancel', [$cancelBtn,'invoke'] );
+    $w->create_binding_for( 'btn_open', [$w,'InvokeBtn','btn_open'] );
+    $w->create_binding_for( 'btn_save', [$w,'InvokeBtn','btn_save'] );
     $w->protocol('WM_DELETE_WINDOW', ['CancelCmd', $w]);
     $w->OnDestroy(['CancelCmd', $w]);
 
@@ -303,9 +431,9 @@ sub Show {
     {
 	my $title = $w->cget(-title);
 	if (!defined $title) {
-	    my $type = $w->cget(-type);
-	    $title = ($type eq 'dir') ? 'Choose Directory'
-                     : ($type eq 'save') ? 'Save As' : 'Open';
+	    my $type = $w->cget(-type)||'open';
+            my $str  = $w->cget('-strings');
+	    $title = $str->{'title_'.$type};
 	}
 	$w->title($title);
     }
@@ -413,8 +541,9 @@ sub Update {
 	# we normally won't come to here. Anyways, give an error and abort
 	# action.
 	$w->messageBox(-type => 'OK',
-		       -message => 'Cannot change to the directory "' .
-		       $w->_get_select_path . "\".\nPermission denied.",
+		       -message => $w->message_for('msg_chdir',
+                                                   $w->_get_select_path
+                                                   ),
 		       -icon => 'warning',
 		      );
 	ext_chdir($appPWD);
@@ -482,7 +611,7 @@ sub Update {
 
     # Restore the Save label
     if ($w->cget(-type) eq 'save') {
-	$w->{'okBtn'}->configure(-text => 'Save');
+	$w->{'okBtn'}->configure($w->configuration_for('btn_save'));
     }
 
     # turn off the busy cursor.
@@ -559,7 +688,7 @@ sub ResolveFile {
     # If the file has no extension, append the default.  Be careful not
     # to do this for directories, otherwise typing a dirname in the box
     # will give back "dirname.extension" instead of trying to change dir.
-    if (!-d $path && $text !~ /\..+$/s && defined $defaultext) {
+    if (!-d $path && $path !~ /\..+$/s && defined $defaultext) {
 	$path = "$path$defaultext";
     }
     # Cannot just test for existance here as non-existing files are
@@ -624,9 +753,9 @@ sub EntFocusIn {
 #XXX is this missing in the tcl version, too???    $w->{'icons'}->Selection('clear');
     my $okBtn = $w->{'okBtn'};
     if ($w->cget(-type) ne 'save') {
-	$okBtn->configure(-text => 'Open');
+	$okBtn->configure($w->configuration_for('btn_open'));
     } else {
-	$okBtn->configure(-text => 'Save');
+	$okBtn->configure($w->configuration_for('btn_save'));
     }
 }
 
@@ -686,8 +815,13 @@ sub VerifyFileName {
 	if ($w->cget(-type) eq 'open') {
 	    $w->messageBox(-icon => 'warning',
 			   -type => 'OK',
-			   -message => 'File "' . TclFileJoin($path, $file)
-			   . '" does not exist.');
+			   -message => $w->message_for(
+                                             'msg_file_dne',
+                                             TclFileJoin($path, $file)
+                                            ),
+                           );
+#('File "' . TclFileJoin($path, $file)
+		#	   . '" does not exist.');
 	    $ent->selectionRange(0, 'end');
 	    $ent->icursor('end');
 	} elsif ($w->cget(-type) eq 'save') {
@@ -702,18 +836,24 @@ sub VerifyFileName {
     } elsif ($flag eq 'PATH') {
 	$w->messageBox(-icon => 'warning',
 		       -type => 'OK',
-		       -message => "Directory \'$path\' does not exist.");
+		       -message => $w->message_for(
+                                                   'msg_dir_dne',
+                                                   $path,
+                                               ),
+                       );;
 	$ent->selectionRange(0, 'end');
 	$ent->icursor('end');
     } elsif ($flag eq 'CHDIR') {
 	$w->messageBox(-type => 'OK',
-		       -message => "Cannot change to the directory \"$path\".\nPermission denied.",
+		       -message => $w->message_for('msg_chdir',
+                                                   $path),
 		       -icon => 'warning');
 	$ent->selectionRange(0, 'end');
 	$ent->icursor('end');
     } elsif ($flag eq 'ERROR') {
 	$w->messageBox(-type => 'OK',
-		       -message => "Invalid file name \"$path\".",
+		       -message => $w->message_for('msg_invalid',
+                                                   $path),
 		       -icon => 'warning');
 	$ent->selectionRange(0, 'end');
 	$ent->icursor('end');
@@ -725,7 +865,10 @@ sub VerifyFileName {
 sub InvokeBtn {
     my($w, $key) = @_;
     my $okBtn = $w->{'okBtn'};
-    $okBtn->invoke if ($okBtn->cget(-text) eq $key);
+    my $type = $w->cget('-type');
+    my $label = "btn_$type";
+    ### $type
+    $okBtn->invoke if ($label eq $key);
 }
 
 # Gets called when user presses the "parent directory" button
@@ -856,12 +999,12 @@ sub ListBrowse {
 	$ent->insert(0, "@$text"); # XXX quote!
 
 	if ($w->cget('-type') ne 'save') {
-	    $okBtn->configure(-text => 'Open');
+	    $okBtn->configure($w->configuration_for( 'btn_open' ));
 	} else {
-	    $okBtn->configure(-text => 'Save');
+	    $okBtn->configure($w->configuration_for( 'btn_save' ));
 	}
     } else {
-	$okBtn->configure(-text => 'Open');
+	$okBtn->configure($w->configuration_for('btn_open'));
     }
 }
 
@@ -876,7 +1019,8 @@ sub ListInvoke {
 	my $appPWD = _cwd();
 	if (!ext_chdir($file)) {
 	    $w->messageBox(-type => 'OK',
-			   -message => "Cannot change to the directory \"$file\".\nPermission denied.",
+			   -message => $w->message_for('msg_chdir',
+                                                       $file),
 			   -icon => 'warning');
 	} else {
 	    ext_chdir($appPWD);
@@ -919,7 +1063,9 @@ sub Done {
 	    my $reply = $w->messageBox
 	      (-icon => 'warning',
 	       -type => 'YesNo',
-	       -message => "File \"$selectFilePath\" already exists.\nDo you want to overwrite it?");
+	       -message => $w->message_for('msg_exists',
+                                           $selectFilePath),
+               );
 	    return unless (lc($reply) eq 'yes');
 	}
     }
