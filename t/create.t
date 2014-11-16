@@ -2,6 +2,12 @@
 BEGIN { $|=1; $^W=1; }
 use strict;
 use Test::More;
+BEGIN {
+    # Test::More::note not available in older Test::More
+    if (!defined &note) {
+	*note = sub { diag @_ };
+    }
+}
 ##
 ## Almost all widget classes:  load module, create, pack, and
 ## destory an instance.
@@ -109,7 +115,11 @@ foreach my $class (@class)
 
     eval "require Tk::$class;";
     is($@, "", "No error loading Tk::$class");
-    isa_ok("Tk::$class", 'Tk::Widget', "Tk::$class is a widget");
+ SKIP: {
+	skip "Test::More too old for isa_ok class check", 1
+	    if $Test::More::VERSION < 0.88;
+	isa_ok("Tk::$class", 'Tk::Widget');
+    }
 
     eval { $w = $mw->$class(); };
     is($@, "", "Can create $class widget");
