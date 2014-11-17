@@ -1125,7 +1125,7 @@ SKIP: {
     $TODO = "May fail on xfwm4" if !$TODO && $xfwm4_problems;
     $TODO = "May fail on fluxbox" if !$TODO && $fluxbox_problems;
     $TODO = "May fail on MacOSX" if !$TODO && $macosx_x11_problems;
-    $TODO = "May fail on Compiz" if !$TODO && $compiz_problems;
+ #   $TODO = "May fail on Compiz" if !$TODO && $compiz_problems;
 
     my $t = $mw->Toplevel(qw(-width 200 -height 200));
     poswin $t;
@@ -1133,6 +1133,9 @@ SKIP: {
     $t->update;
     $t->geometry("400x300");
     $t->update;
+    my $done = 0;
+    $t->after(100,sub{$done++});
+    $t->waitVariable(\$done);
     my($w,$h) = $t->geometry =~ m{(\d+)x(\d+)};
     is($w, 300, q{attempting to resize to a value bigger than the current maxsize});
     # ... will set it to the max size
@@ -1145,7 +1148,7 @@ SKIP: {
     $TODO = "May fail on KDE" if !$TODO && $kwin_problems;
     $TODO = "May fail on xfwm4" if !$TODO && $xfwm4_problems;
     $TODO = "May fail on fluxbox" if !$TODO && $fluxbox_problems;
-    $TODO = "May fail on Compiz" if !$TODO && $compiz_problems;
+   # $TODO = "May fail on Compiz" if !$TODO && $compiz_problems;
 
     my $t = $mw->Toplevel;
     poswin $t;
@@ -1155,6 +1158,9 @@ SKIP: {
     $t->update;
     $t->geometry("8x6");
     $t->update;
+    my $done = 0;
+    $t->after(100,sub{$done++});
+    $t->waitVariable(\$done);
     my($w,$h) = $t->geometry =~ m{(\d+)x(\d+)};
     is($w, 6, q{attempting to resize a gridded toplevel to a value bigger});
     # ... than the current maxsize will set it to the max size
@@ -1221,7 +1227,9 @@ SKIP: {
     $t->minsize(400, 300);
     # UpdateGeometryInfo invoked at idle
     $t->update;
-
+    my $done = 0;
+    $t->after(100,sub{$done++});
+    $t->waitVariable(\$done);
     my($w,$h) = $t->geometry =~ m{(\d+)x(\d+)};
     is($w, 400, q{setting the minsize to a larger value will resize a toplevel});
     is($h, 300);
@@ -1235,7 +1243,7 @@ SKIP: {
     $TODO = "May fail on xfwm4" if !$TODO && $xfwm4_problems;
     $TODO = "May fail on MacOSX" if !$TODO && $macosx_x11_problems;
     $TODO = "May fail on fluxbox" if !$TODO && $fluxbox_problems;
-    $TODO = "May fail on Compiz" if !$TODO && $compiz_problems;
+  #  $TODO = "May fail on Compiz" if !$TODO && $compiz_problems;
 
     my $t = $mw->Toplevel;
     poswin $t;
@@ -1245,7 +1253,9 @@ SKIP: {
     $t->minsize(8,8);
     # UpdateGeometryInfo invoked at idle
     $t->update;
-
+    my $done = 0;
+    $t->after(100,sub{$done++});
+    $t->waitVariable(\$done);
     my($w,$h) = $t->geometry =~ m{(\d+)x(\d+)};
     is($w, 8, q{setting the minsize to a larger value will resize a gridded toplevel});
     is($h, 8);
